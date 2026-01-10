@@ -1,6 +1,8 @@
 <html>
-  <head><title>Barber Config Generator</title></head>
+  <head><title>Barber Config Generator</title>  <link rel="stylesheet" href="/assets/css/smartflow-theme.css">
+</head>
   <body>
+  <canvas id="circuit-canvas"></canvas>
     <h2>Create New Barber Config</h2>
     <form id="configForm">
       <input name="barberName" placeholder="Barber Shop Name" required /><br />
@@ -25,5 +27,6 @@
         document.getElementById("result").innerText = result;
       };
     </script>
-  </body>
+    <script src="/assets/js/smartflow-app.js"></script>
+</body>
 </html>

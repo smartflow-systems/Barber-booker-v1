@@ -16,6 +16,7 @@ export const sessions = pgTable(
 // Admin users table for barber authentication
 export const adminUsers = pgTable("admin_users", {
   id: serial("id").primaryKey(),
+  orgId: text("org_id"), // SFS-Backend org UUID — null = legacy single-tenant
   username: text("username").notNull().unique(),
   password: text("password").notNull(), // hashed
   barberId: integer("barber_id").references(() => barbers.id),
@@ -27,6 +28,7 @@ export const adminUsers = pgTable("admin_users", {
 
 export const barbers = pgTable("barbers", {
   id: serial("id").primaryKey(),
+  orgId: text("org_id"), // SFS-Backend org UUID
   name: text("name").notNull(),
   title: text("title").notNull(),
   bio: text("bio"),
@@ -40,6 +42,7 @@ export const barbers = pgTable("barbers", {
 
 export const services = pgTable("services", {
   id: serial("id").primaryKey(),
+  orgId: text("org_id"), // SFS-Backend org UUID
   name: text("name").notNull(),
   duration: integer("duration").notNull(), // in minutes
   price: integer("price").notNull(), // in cents
@@ -47,6 +50,7 @@ export const services = pgTable("services", {
 
 export const clients = pgTable("clients", {
   id: serial("id").primaryKey(),
+  orgId: text("org_id"), // SFS-Backend org UUID
   name: text("name").notNull(),
   phone: text("phone").notNull().unique(),
   email: text("email"),
@@ -210,6 +214,7 @@ export const googleTokens = pgTable("google_tokens", {
 
 export const bookings = pgTable("bookings", {
   id: serial("id").primaryKey(),
+  orgId: text("org_id"), // SFS-Backend org UUID
   clientId: integer("client_id"),
   customerName: text("customer_name").notNull(),
   customerPhone: text("customer_phone").notNull(),

@@ -23,6 +23,7 @@ import Stripe from "stripe";
 import { smsService } from "../services/sms";
 import { reminderScheduler } from "../services/reminderScheduler";
 import { helmetConfig, corsConfig, apiLimiter, authLimiter, sanitizeInput } from "../middleware/security";
+import { requireAuth as sfsRequireAuth } from "../middleware/sfs-auth";
 
 // Initialize Stripe only if API key is provided
 let stripe: Stripe | null = null;
@@ -148,72 +149,26 @@ export async function registerRoutes(app: Express) {
     res.json({ csrfToken: req.csrfToken && req.csrfToken() });
   });
 
-  // Auth middleware
-  const requireAuth = (req: any, res: any, next: any) => {
-    if (!req.session.adminUser) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-    next();
-  };
+  // SFS JWT auth middleware — token issued by SFS-Backend, verified by shared SFS_JWT_SECRET
+  const requireAuth = sfsRequireAuth;
 
   // Admin Authentication Routes
-  app.post("/api/admin/login", authLimiter, async (req, res) => {
-    try {
-      const { username, password } = req.body;
+  // Login is now handled by SFS-Backend (/api/auth/login → returns JWT).
+  // The frontend stores the JWT and sends it as "Authorization: Bearer <token>".
 
-      const user = await storage.getAdminUserByUsername(username);
-      if (!user || !user.isActive) {
-        return res.status(401).json({ error: "Invalid credentials" });
-      }
-
-      const isValid = await bcrypt.compare(password, user.password);
-      if (!isValid) {
-        return res.status(401).json({ error: "Invalid credentials" });
-      }
-
-      // Update last login (skip for now due to type constraints)
-
-      // Store user in session
-      req.session.adminUser = user;
-
-      res.json({ success: true, user: { id: user.id, username: user.username, role: user.role } });
-    } catch (error) {
-      console.error("Login error:", error);
-      res.status(500).json({ error: "Login failed" });
-    }
-  });
-
-  app.post("/api/admin/logout", apiLimiter, requireAuth, async (req, res) => {
-    req.session.destroy((err) => {
-      if (err) {
-        return res.status(500).json({ error: "Logout failed" });
-      }
-      res.json({ success: true });
-    });
+  app.post("/api/admin/logout", apiLimiter, (_req, res) => {
+    // JWT is stateless — logout is handled client-side by discarding the token.
+    res.json({ success: true });
   });
 
   app.get("/api/admin/user", apiLimiter, requireAuth, async (req, res) => {
-    const user = req.session.adminUser;
-    if (!user) {
-      return res.status(401).json({ error: "User not found in session" });
-    }
-    res.json({
-      id: user.id,
-      username: user.username,
-      role: user.role,
-      barberId: user.barberId,
-      isActive: user.isActive,
-      lastLogin: user.lastLogin
-    });
+    const { userId, orgId, email, role } = req.user!;
+    res.json({ userId, orgId, email, role });
   });
 
   app.get("/api/admin/google-token", apiLimiter, requireAuth, async (req, res) => {
     try {
-      const user = req.session.adminUser;
-      if (!user) {
-        return res.status(401).json({ error: "User not found in session" });
-      }
-      const token = await storage.getGoogleToken(user.id.toString());
+      const token = await storage.getGoogleToken(req.user!.userId);
       res.json(token);
     } catch (error) {
       console.error("Error fetching Google token:", error);
@@ -223,11 +178,7 @@ export async function registerRoutes(app: Express) {
 
   app.delete("/api/admin/google-disconnect", apiLimiter, requireAuth, async (req, res) => {
     try {
-      const user = req.session.adminUser;
-      if (!user) {
-        return res.status(401).json({ error: "User not found in session" });
-      }
-      await storage.deleteGoogleToken(user.id.toString());
+      await storage.deleteGoogleToken(req.user!.userId);
       res.json({ success: true });
     } catch (error) {
       console.error("Error disconnecting Google:", error);

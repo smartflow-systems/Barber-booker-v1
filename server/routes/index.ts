@@ -187,9 +187,10 @@ export async function registerRoutes(app: Express) {
   });
 
   // Barbers
-  app.get("/api/barbers", apiLimiter, async (_req, res) => {
+  app.get("/api/barbers", apiLimiter, async (req, res) => {
     try {
-      const barbers = await storage.getBarbers();
+      const orgId = (req.query.orgId as string) || process.env.SFS_ORG_ID;
+      const barbers = await storage.getBarbers(orgId);
       res.json(barbers);
     } catch (error) {
       console.error("Error fetching barbers:", error);
@@ -200,7 +201,8 @@ export async function registerRoutes(app: Express) {
   app.post("/api/bookings", apiLimiter, async (req, res) => {
   try {
     // ✅ Step 1: Validate and store booking
-    const bookingData = insertBookingSchema.parse(req.body);
+    const orgId = (req.query.orgId as string) || (req.body.orgId as string) || process.env.SFS_ORG_ID;
+    const bookingData = insertBookingSchema.parse({ ...req.body, orgId });
     const booking = await storage.createBooking(bookingData);
 
     // ✅ Step 2: Add Google Calendar event
@@ -293,9 +295,10 @@ export async function registerRoutes(app: Express) {
   });
 
   // Services
-  app.get("/api/services", apiLimiter, async (_req, res) => {
+  app.get("/api/services", apiLimiter, async (req, res) => {
     try {
-      const services = await storage.getServices();
+      const orgId = (req.query.orgId as string) || process.env.SFS_ORG_ID;
+      const services = await storage.getServices(orgId);
       res.json(services);
     } catch (error) {
       console.error("Error fetching services:", error);
@@ -303,9 +306,9 @@ export async function registerRoutes(app: Express) {
     }
   });
 
-  app.post("/api/services", apiLimiter, async (req, res) => {
+  app.post("/api/services", apiLimiter, requireAuth, async (req, res) => {
     try {
-      const service = insertServiceSchema.parse(req.body);
+      const service = insertServiceSchema.parse({ ...req.body, orgId: req.user!.orgId });
       const newService = await storage.createService(service);
       res.status(201).json(newService);
     } catch (error) {
@@ -315,9 +318,9 @@ export async function registerRoutes(app: Express) {
   });
 
   // Bookings
-  app.get("/api/bookings", apiLimiter, async (_req, res) => {
+  app.get("/api/bookings", apiLimiter, requireAuth, async (req, res) => {
     try {
-      const bookings = await storage.getBookings();
+      const bookings = await storage.getBookings(req.user!.orgId);
       res.json(bookings);
     } catch (error) {
       console.error("Error fetching bookings:", error);
@@ -328,7 +331,8 @@ export async function registerRoutes(app: Express) {
   app.get("/api/bookings/date/:date", apiLimiter, async (req, res) => {
     try {
       const { date } = req.params;
-      const bookings = await storage.getBookingsByDate(date);
+      const orgId = (req.query.orgId as string) || process.env.SFS_ORG_ID;
+      const bookings = await storage.getBookingsByDate(date, orgId);
       res.json(bookings);
     } catch (error) {
       console.error("Error fetching bookings by date:", error);
@@ -339,7 +343,8 @@ export async function registerRoutes(app: Express) {
   app.get("/api/bookings/barber/:barberId/date/:date", apiLimiter, async (req, res) => {
     try {
       const { barberId, date } = req.params;
-      const bookings = await storage.getBookingsByBarberAndDate(parseInt(barberId), date);
+      const orgId = (req.query.orgId as string) || process.env.SFS_ORG_ID;
+      const bookings = await storage.getBookingsByBarberAndDate(parseInt(barberId), date, orgId);
       res.json(bookings);
     } catch (error) {
       console.error("Error fetching barber bookings:", error);
@@ -407,7 +412,8 @@ export async function registerRoutes(app: Express) {
       const allSlots = generateTimeSlots(businessStart, businessEnd, 30); // 30-min intervals
 
       // Get existing bookings for the date and barber
-      const bookings = await storage.getBookingsByBarberAndDate(barberIdNum, dateStr);
+      const orgId = (req.query.orgId as string) || process.env.SFS_ORG_ID;
+      const bookings = await storage.getBookingsByBarberAndDate(barberIdNum, dateStr, orgId);
 
       // Get staff breaks for the date and barber
       const breaks = await storage.getStaffBreaksByBarber(barberIdNum, dateStr);
@@ -509,9 +515,9 @@ export async function registerRoutes(app: Express) {
   }
 
   // Clients
-  app.get("/api/clients", apiLimiter, async (_req, res) => {
+  app.get("/api/clients", apiLimiter, requireAuth, async (req, res) => {
     try {
-      const clients = await storage.getClients();
+      const clients = await storage.getClients(req.user!.orgId);
       res.json(clients);
     } catch (error) {
       console.error("Error fetching clients:", error);
@@ -521,7 +527,8 @@ export async function registerRoutes(app: Express) {
 
   app.post("/api/clients", apiLimiter, async (req, res) => {
     try {
-      const client = insertClientSchema.parse(req.body);
+      const orgId = (req.query.orgId as string) || process.env.SFS_ORG_ID;
+      const client = insertClientSchema.parse({ ...req.body, orgId });
       const newClient = await storage.createClient(client);
       res.status(201).json(newClient);
     } catch (error) {
@@ -697,13 +704,15 @@ export async function registerRoutes(app: Express) {
       // Hash password
       const hashedPassword = await bcrypt.hash(password, 10);
 
-      // Create customer
+      // Create customer — orgId scopes this customer to the right shop
+      const orgId = (req.query.orgId as string) || (req.body.orgId as string) || process.env.SFS_ORG_ID;
       const customer = await storage.createClient({
         name,
         email,
         phone,
         password: hashedPassword,
-        emailVerified: false
+        emailVerified: false,
+        orgId,
       });
 
       // Set session

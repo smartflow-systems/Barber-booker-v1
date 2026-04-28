@@ -92,17 +92,17 @@ import { eq, and } from "drizzle-orm";
 
 export interface IStorage {
   // Barbers
-  getBarbers(): Promise<Barber[]>;
+  getBarbers(orgId?: string): Promise<Barber[]>;
   getBarber(id: number): Promise<Barber | undefined>;
   createBarber(barber: InsertBarber): Promise<Barber>;
 
   // Services
-  getServices(): Promise<Service[]>;
+  getServices(orgId?: string): Promise<Service[]>;
   getService(id: number): Promise<Service | undefined>;
   createService(service: InsertService): Promise<Service>;
 
   // Clients
-  getClients(): Promise<Client[]>;
+  getClients(orgId?: string): Promise<Client[]>;
   getClient(id: number): Promise<Client | undefined>;
   getClientByPhone(phone: string): Promise<Client | undefined>;
   getClientByEmail(email: string): Promise<Client | undefined>;
@@ -123,13 +123,13 @@ export interface IStorage {
   updateAdminUser(id: number, updates: Partial<InsertAdminUser>): Promise<AdminUser | undefined>;
 
   // Bookings
-  getBookings(): Promise<Booking[]>;
+  getBookings(orgId?: string): Promise<Booking[]>;
   getBooking(id: number): Promise<Booking | undefined>;
   createBooking(booking: InsertBooking): Promise<Booking>;
   updateBooking(id: number, updates: Partial<InsertBooking>): Promise<Booking | undefined>;
   deleteBooking(id: number): Promise<boolean>;
-  getBookingsByDate(date: string): Promise<Booking[]>;
-  getBookingsByBarberAndDate(barberId: number, date: string): Promise<Booking[]>;
+  getBookingsByDate(date: string, orgId?: string): Promise<Booking[]>;
+  getBookingsByBarberAndDate(barberId: number, date: string, orgId?: string): Promise<Booking[]>;
   getBookingsByClient(clientId: number): Promise<Booking[]>;
 
   // Reviews
@@ -282,8 +282,9 @@ export class MemStorage implements IStorage {
   }
 
   // Barber methods
-  async getBarbers(): Promise<Barber[]> {
-    return Array.from(this.barbers.values());
+  async getBarbers(orgId?: string): Promise<Barber[]> {
+    const all = Array.from(this.barbers.values());
+    return orgId ? all.filter(b => b.orgId === orgId) : all;
   }
 
   async getBarber(id: number): Promise<Barber | undefined> {
@@ -305,8 +306,9 @@ export class MemStorage implements IStorage {
   }
 
   // Service methods
-  async getServices(): Promise<Service[]> {
-    return Array.from(this.services.values());
+  async getServices(orgId?: string): Promise<Service[]> {
+    const all = Array.from(this.services.values());
+    return orgId ? all.filter(s => s.orgId === orgId) : all;
   }
 
   async getService(id: number): Promise<Service | undefined> {
@@ -321,12 +323,10 @@ export class MemStorage implements IStorage {
   }
 
   // Booking methods
-  async getBookings(): Promise<Booking[]> {
-    return Array.from(this.bookings.values()).sort((a, b) => {
-      const dateA = new Date(`${a.date}T${a.time}`);
-      const dateB = new Date(`${b.date}T${b.time}`);
-      return dateB.getTime() - dateA.getTime();
-    });
+  async getBookings(orgId?: string): Promise<Booking[]> {
+    let all = Array.from(this.bookings.values());
+    if (orgId) all = all.filter(b => b.orgId === orgId);
+    return all.sort((a, b) => new Date(`${b.date}T${b.time}`).getTime() - new Date(`${a.date}T${a.time}`).getTime());
   }
 
   async getBooking(id: number): Promise<Booking | undefined> {
@@ -363,19 +363,22 @@ export class MemStorage implements IStorage {
     return this.bookings.delete(id);
   }
 
-  async getBookingsByDate(date: string): Promise<Booking[]> {
-    return Array.from(this.bookings.values()).filter(booking => booking.date === date);
+  async getBookingsByDate(date: string, orgId?: string): Promise<Booking[]> {
+    return Array.from(this.bookings.values()).filter(
+      b => b.date === date && (!orgId || b.orgId === orgId)
+    );
   }
 
-  async getBookingsByBarberAndDate(barberId: number, date: string): Promise<Booking[]> {
+  async getBookingsByBarberAndDate(barberId: number, date: string, orgId?: string): Promise<Booking[]> {
     return Array.from(this.bookings.values()).filter(
-      booking => booking.barberId === barberId && booking.date === date
+      b => b.barberId === barberId && b.date === date && (!orgId || b.orgId === orgId)
     );
   }
 
   // Client methods
-  async getClients(): Promise<Client[]> {
-    return Array.from(this.clients.values());
+  async getClients(orgId?: string): Promise<Client[]> {
+    const all = Array.from(this.clients.values());
+    return orgId ? all.filter(c => c.orgId === orgId) : all;
   }
 
   async getClient(id: number): Promise<Client | undefined> {
@@ -637,7 +640,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Barber methods
-  async getBarbers(): Promise<Barber[]> {
+  async getBarbers(orgId?: string): Promise<Barber[]> {
+    if (orgId) return await db.select().from(barbers).where(eq(barbers.orgId, orgId));
     return await db.select().from(barbers);
   }
 
@@ -655,7 +659,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Service methods
-  async getServices(): Promise<Service[]> {
+  async getServices(orgId?: string): Promise<Service[]> {
+    if (orgId) return await db.select().from(services).where(eq(services.orgId, orgId));
     return await db.select().from(services);
   }
 
@@ -673,7 +678,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Booking methods
-  async getBookings(): Promise<Booking[]> {
+  async getBookings(orgId?: string): Promise<Booking[]> {
+    if (orgId) return await db.select().from(bookings).where(eq(bookings.orgId, orgId)).orderBy(bookings.createdAt);
     return await db.select().from(bookings).orderBy(bookings.createdAt);
   }
 
@@ -704,18 +710,21 @@ export class DatabaseStorage implements IStorage {
     return (result.rowCount ?? 0) > 0;
   }
 
-  async getBookingsByDate(date: string): Promise<Booking[]> {
-    return await db.select().from(bookings).where(eq(bookings.date, date));
+  async getBookingsByDate(date: string, orgId?: string): Promise<Booking[]> {
+    const cond = orgId ? and(eq(bookings.date, date), eq(bookings.orgId, orgId)) : eq(bookings.date, date);
+    return await db.select().from(bookings).where(cond);
   }
 
-  async getBookingsByBarberAndDate(barberId: number, date: string): Promise<Booking[]> {
-    return await db.select().from(bookings).where(
-      and(eq(bookings.barberId, barberId), eq(bookings.date, date))
-    );
+  async getBookingsByBarberAndDate(barberId: number, date: string, orgId?: string): Promise<Booking[]> {
+    const cond = orgId
+      ? and(eq(bookings.barberId, barberId), eq(bookings.date, date), eq(bookings.orgId, orgId))
+      : and(eq(bookings.barberId, barberId), eq(bookings.date, date));
+    return await db.select().from(bookings).where(cond);
   }
 
   // Client methods
-  async getClients(): Promise<Client[]> {
+  async getClients(orgId?: string): Promise<Client[]> {
+    if (orgId) return await db.select().from(clients).where(eq(clients.orgId, orgId));
     return await db.select().from(clients);
   }
 

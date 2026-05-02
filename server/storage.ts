@@ -540,28 +540,31 @@ export class DatabaseStorage implements IStorage {
 
   private async initializeDefaultData() {
     try {
-      // Check if barbers already exist
+      // Always ensure the default admin user exists, regardless of other seed state
+      try {
+        const existingAdmin = await this.getAdminUserByUsername('admin');
+        if (!existingAdmin) {
+          const bcrypt = await import('bcrypt');
+          const seededBarbers = await this.getBarbers();
+          const hashedPassword = await bcrypt.hash('admin123', 10);
+          await this.createAdminUser({
+            username: 'admin',
+            password: hashedPassword,
+            barberId: seededBarbers[0]?.id ?? null,
+            role: 'admin',
+            isActive: true
+          });
+          console.log('[seed] admin user created (admin / admin123)');
+        }
+      } catch (error) {
+        console.error('Error ensuring default admin user:', error);
+      }
+
+      // Check if barbers already exist before seeding content
       const existingBarbers = await this.getBarbers();
       if (existingBarbers.length > 0) return;
 
-      // Initialize default admin users first
-      try {
-        const existingAdmin = await this.getAdminUserByUsername('john_barber');
-        if (!existingAdmin) {
-          const hashedPassword = await require('bcrypt').hash('barber123', 10);
-          await this.createAdminUser({
-            username: 'john_barber',
-            password: hashedPassword,
-            barberId: 1,
-            role: 'barber',
-            isActive: true
-          });
-        }
-      } catch (error) {
-        console.error('Error creating default admin user:', error);
-      }
-
-      // Create default barbers
+      // Create default barbers FIRST (admin users reference barber IDs)
       const defaultBarbers: InsertBarber[] = [
         {
           name: "John Doe",
@@ -634,6 +637,7 @@ export class DatabaseStorage implements IStorage {
           console.error('Error creating service:', service.name, error);
         }
       }
+
     } catch (error) {
       console.error('Error in initializeDefaultData:', error);
     }

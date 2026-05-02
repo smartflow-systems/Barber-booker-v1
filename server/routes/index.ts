@@ -23,6 +23,7 @@ import Stripe from "stripe";
 import { smsService } from "../services/sms";
 import { reminderScheduler } from "../services/reminderScheduler";
 import { helmetConfig, corsConfig, apiLimiter, authLimiter, sanitizeInput } from "../middleware/security";
+import jwt from "jsonwebtoken";
 import { requireAuth as sfsRequireAuth } from "../middleware/sfs-auth";
 
 // Initialize Stripe only if API key is provided
@@ -127,7 +128,8 @@ export async function registerRoutes(app: Express) {
   app.use(session({
     store: new pgSession({
       conString: process.env.DATABASE_URL,
-      createTableIfMissing: true,
+      tableName: 'sessions',
+      createTableIfMissing: false,
     }),
     secret: process.env.SESSION_SECRET || 'your-secret-key',
     resave: false,
@@ -153,8 +155,43 @@ export async function registerRoutes(app: Express) {
   const requireAuth = sfsRequireAuth;
 
   // Admin Authentication Routes
-  // Login is now handled by SFS-Backend (/api/auth/login → returns JWT).
-  // The frontend stores the JWT and sends it as "Authorization: Bearer <token>".
+  // Local login — issues a JWT signed with SFS_JWT_SECRET for standalone / demo use.
+  // On multi-tenant deployments, direct users to SFS-Backend for login instead.
+  app.post("/api/admin/login", authLimiter, async (req, res) => {
+    try {
+      const { username, password } = req.body;
+      if (!username || !password) {
+        return res.status(400).json({ error: "Username and password required" });
+      }
+      const adminUser = await storage.getAdminUserByUsername(username);
+      if (!adminUser || !adminUser.isActive) {
+        return res.status(401).json({ error: "Invalid credentials" });
+      }
+      const bcrypt = await import("bcrypt");
+      const valid = await bcrypt.compare(password, adminUser.password);
+      if (!valid) {
+        return res.status(401).json({ error: "Invalid credentials" });
+      }
+      const secret = process.env.SFS_JWT_SECRET;
+      if (!secret) return res.status(500).json({ error: "Server misconfiguration: SFS_JWT_SECRET not set" });
+
+      const token = jwt.sign(
+        {
+          userId: String(adminUser.id),
+          orgId:  adminUser.orgId  || "",
+          email:  adminUser.username,
+          role:   adminUser.role === "admin" ? "admin" : "member",
+          plan:   "pro",
+        },
+        secret,
+        { expiresIn: "24h" }
+      );
+      res.json({ success: true, token, user: { id: adminUser.id, username: adminUser.username, role: adminUser.role } });
+    } catch (error) {
+      console.error("Admin login error:", error);
+      res.status(500).json({ error: "Login failed" });
+    }
+  });
 
   app.post("/api/admin/logout", apiLimiter, (_req, res) => {
     // JWT is stateless — logout is handled client-side by discarding the token.

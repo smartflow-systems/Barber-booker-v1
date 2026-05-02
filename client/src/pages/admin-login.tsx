@@ -131,8 +131,8 @@ export default function AdminLogin() {
 
           <div className="mt-6 text-center text-sm text-muted-foreground">
             <p>Demo credentials:</p>
-            <p>Username: <code className="bg-muted px-1 rounded">john_barber</code></p>
-            <p>Password: <code className="bg-muted px-1 rounded">barber123</code></p>
+            <p>Username: <code className="bg-muted px-1 rounded">admin</code></p>
+            <p>Password: <code className="bg-muted px-1 rounded">admin123</code></p>
           </div>
         </CardContent>
       </Card>

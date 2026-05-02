@@ -168,12 +168,17 @@ export function BookingForm({ onBookingComplete }: BookingFormProps) {
     return `£${(priceInCents / 100).toFixed(2)}`;
   };
 
+  const whatsappNumber = import.meta.env.VITE_WHATSAPP_NUMBER as string | undefined;
+  const shopName = (import.meta.env.VITE_SHOP_NAME as string | undefined) || "Our Barbershop";
+  const shopAddress = (import.meta.env.VITE_SHOP_ADDRESS as string | undefined) || "";
+  const shopPhone = (import.meta.env.VITE_SHOP_PHONE as string | undefined) || "";
+  const shopHoursWeekday = (import.meta.env.VITE_SHOP_HOURS_WEEKDAY as string | undefined) || "Mon-Fri: 9:00 AM - 8:00 PM";
+  const shopHoursWeekend = (import.meta.env.VITE_SHOP_HOURS_WEEKEND as string | undefined) || "Sat-Sun: 9:00 AM - 6:00 PM";
+
   const openWhatsApp = () => {
-    const phoneNumber = "1234567890"; // Replace with your actual WhatsApp number
-    const message = "Hi, I'd like to book an appointment at Smart Flow Systems. Can you help me with scheduling?";
-    const encodedMessage = encodeURIComponent(message);
-    const whatsappUrl = `https://wa.me/${phoneNumber}?text=${encodedMessage}`;
-    window.open(whatsappUrl, '_blank');
+    if (!whatsappNumber) return;
+    const message = `Hi, I'd like to book an appointment at ${shopName}. Can you help me with scheduling?`;
+    window.open(`https://wa.me/${whatsappNumber}?text=${encodeURIComponent(message)}`, '_blank');
   };
 
   const handleCalendarDateSelect = (date: string) => {
@@ -549,21 +554,23 @@ export function BookingForm({ onBookingComplete }: BookingFormProps) {
                 </p>
               </div>
 
-              {/* WhatsApp Button */}
-              <div className="pt-4 border-t border-slate-200">
-                <div className="text-center mb-3">
-                  <p className="text-sm text-slate-600">Need help or have questions?</p>
+              {/* WhatsApp Button — only shown when VITE_WHATSAPP_NUMBER is set */}
+              {whatsappNumber && (
+                <div className="pt-4 border-t border-slate-200">
+                  <div className="text-center mb-3">
+                    <p className="text-sm text-slate-600">Need help or have questions?</p>
+                  </div>
+                  <Button
+                    type="button"
+                    onClick={openWhatsApp}
+                    className="w-full py-4 text-lg font-semibold bg-gradient-to-r from-green-500 via-green-400 to-green-500 hover:from-green-600 hover:via-green-500 hover:to-green-600 text-white border-0 transition-all duration-300 shadow-lg hover:shadow-xl"
+                    variant="outline"
+                  >
+                    <MessageCircle className="mr-2" />
+                    Chat on WhatsApp
+                  </Button>
                 </div>
-                <Button
-                  type="button"
-                  onClick={openWhatsApp}
-                  className="w-full py-4 text-lg font-semibold bg-gradient-to-r from-green-500 via-green-400 to-green-500 hover:from-green-600 hover:via-green-500 hover:to-green-600 text-white border-0 transition-all duration-300 shadow-lg hover:shadow-xl"
-                  variant="outline"
-                >
-                  <MessageCircle className="mr-2" />
-                  Chat on WhatsApp
-                </Button>
-              </div>
+              )}
             </form>
           </CardContent>
         </Card>
@@ -625,19 +632,21 @@ export function BookingForm({ onBookingComplete }: BookingFormProps) {
             <div className="flex items-start space-x-3">
               <i className="fas fa-map-marker-alt text-slate-400 mt-1"></i>
               <div>
-                <div className="font-medium text-slate-900">BarberShop Pro</div>
-                <div className="text-slate-600">123 Main Street<br />Downtown, NY 10001</div>
+                <div className="font-medium text-slate-900">{shopName}</div>
+                {shopAddress && <div className="text-slate-600">{shopAddress}</div>}
               </div>
             </div>
-            <div className="flex items-center space-x-3">
-              <i className="fas fa-phone text-slate-400"></i>
-              <span className="text-slate-600">(555) 123-CUTS</span>
-            </div>
+            {shopPhone && (
+              <div className="flex items-center space-x-3">
+                <i className="fas fa-phone text-slate-400"></i>
+                <span className="text-slate-600">{shopPhone}</span>
+              </div>
+            )}
             <div className="flex items-center space-x-3">
               <i className="fas fa-clock text-slate-400"></i>
               <div className="text-slate-600">
-                <div>Mon-Fri: 9:00 AM - 8:00 PM</div>
-                <div>Sat-Sun: 9:00 AM - 6:00 PM</div>
+                <div>{shopHoursWeekday}</div>
+                <div>{shopHoursWeekend}</div>
               </div>
             </div>
           </CardContent>

@@ -63,7 +63,7 @@ export default function Admin() {
       return response.json();
     },
     onSuccess: () => {
-      window.location.href = "/admin/login";
+      window.location.href = "/admin-login";
     },
   });
 
@@ -104,7 +104,7 @@ export default function Admin() {
   }
 
   if (!adminUser) {
-    window.location.href = "/admin/login";
+    window.location.href = "/admin-login";
     return null;
   }
 

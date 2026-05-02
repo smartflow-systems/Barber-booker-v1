@@ -49,15 +49,9 @@ export const queryClient = new QueryClient({
       refetchOnWindowFocus: false,
       staleTime: Infinity,
       retry: false,
-      onError: (error) => {
-        console.error('Query error:', error);
-      },
     },
     mutations: {
       retry: false,
-      onError: (error) => {
-        console.error('Mutation error:', error);
-      },
     },
   },
 });

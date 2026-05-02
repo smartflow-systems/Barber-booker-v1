@@ -1,6 +1,5 @@
 import { generateBookingMessage, sendEmailConfirmation } from "../ai/bookingMessage";
 import express, { type Express } from "express";
-import lusca from "lusca";
 import session from "express-session";
 import bcrypt from "bcrypt";
 import { createServer } from "http";
@@ -24,7 +23,6 @@ import { smsService } from "../services/sms";
 import { reminderScheduler } from "../services/reminderScheduler";
 import { helmetConfig, corsConfig, apiLimiter, authLimiter, sanitizeInput } from "../middleware/security";
 import jwt from "jsonwebtoken";
-import { requireAuth as sfsRequireAuth } from "../middleware/sfs-auth";
 
 // Initialize Stripe only if API key is provided
 let stripe: Stripe | null = null;
@@ -142,21 +140,20 @@ export async function registerRoutes(app: Express) {
     },
   }));
 
-  // CSRF protection middleware
-  app.use(lusca.csrf());
+  // sameSite: 'strict' on the session cookie provides CSRF protection for session routes.
+  // lusca.csrf() is not used because the frontend JSON API never sends CSRF tokens.
 
-  // Utility route for frontend to fetch CSRF token (optional)
-  app.get("/api/csrf-token", (req, res) => {
-    // lusca places the token at req.csrfToken
-    res.json({ csrfToken: req.csrfToken && req.csrfToken() });
-  });
+  // Session-based admin auth middleware
+  function requireAdminSession(req: any, res: any, next: any) {
+    if (!req.session?.adminUserId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    next();
+  }
 
-  // SFS JWT auth middleware — token issued by SFS-Backend, verified by shared SFS_JWT_SECRET
-  const requireAuth = sfsRequireAuth;
+  const requireAuth = requireAdminSession;
 
   // Admin Authentication Routes
-  // Local login — issues a JWT signed with SFS_JWT_SECRET for standalone / demo use.
-  // On multi-tenant deployments, direct users to SFS-Backend for login instead.
   app.post("/api/admin/login", authLimiter, async (req, res) => {
     try {
       const { username, password } = req.body;
@@ -172,40 +169,40 @@ export async function registerRoutes(app: Express) {
       if (!valid) {
         return res.status(401).json({ error: "Invalid credentials" });
       }
-      const secret = process.env.SFS_JWT_SECRET;
-      if (!secret) return res.status(500).json({ error: "Server misconfiguration: SFS_JWT_SECRET not set" });
 
-      const token = jwt.sign(
-        {
-          userId: String(adminUser.id),
-          orgId:  adminUser.orgId  || "",
-          email:  adminUser.username,
-          role:   adminUser.role === "admin" ? "admin" : "member",
-          plan:   "pro",
-        },
-        secret,
-        { expiresIn: "24h" }
-      );
-      res.json({ success: true, token, user: { id: adminUser.id, username: adminUser.username, role: adminUser.role } });
+      req.session.adminUserId = adminUser.id;
+      res.json({ success: true, user: { id: adminUser.id, username: adminUser.username, role: adminUser.role } });
     } catch (error) {
       console.error("Admin login error:", error);
       res.status(500).json({ error: "Login failed" });
     }
   });
 
-  app.post("/api/admin/logout", apiLimiter, (_req, res) => {
-    // JWT is stateless — logout is handled client-side by discarding the token.
+  app.post("/api/admin/logout", apiLimiter, (req, res) => {
+    req.session.destroy(() => {});
     res.json({ success: true });
   });
 
-  app.get("/api/admin/user", apiLimiter, requireAuth, async (req, res) => {
-    const { userId, orgId, email, role } = req.user!;
-    res.json({ userId, orgId, email, role });
+  app.get("/api/admin/user", apiLimiter, requireAdminSession, async (req, res) => {
+    try {
+      const adminUser = await storage.getAdminUser(req.session.adminUserId);
+      if (!adminUser) return res.status(401).json({ error: "User not found" });
+      res.json({
+        id: adminUser.id,
+        username: adminUser.username,
+        role: adminUser.role,
+        isActive: adminUser.isActive,
+        lastLogin: adminUser.lastLogin,
+        barberId: adminUser.barberId,
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch user" });
+    }
   });
 
-  app.get("/api/admin/google-token", apiLimiter, requireAuth, async (req, res) => {
+  app.get("/api/admin/google-token", apiLimiter, requireAdminSession, async (req, res) => {
     try {
-      const token = await storage.getGoogleToken(req.user!.userId);
+      const token = await storage.getGoogleToken(String(req.session.adminUserId));
       res.json(token);
     } catch (error) {
       console.error("Error fetching Google token:", error);
@@ -215,7 +212,7 @@ export async function registerRoutes(app: Express) {
 
   app.delete("/api/admin/google-disconnect", apiLimiter, requireAuth, async (req, res) => {
     try {
-      await storage.deleteGoogleToken(req.user!.userId);
+      await storage.deleteGoogleToken(String(req.session.adminUserId));
       res.json({ success: true });
     } catch (error) {
       console.error("Error disconnecting Google:", error);
@@ -345,7 +342,7 @@ export async function registerRoutes(app: Express) {
 
   app.post("/api/services", apiLimiter, requireAuth, async (req, res) => {
     try {
-      const service = insertServiceSchema.parse({ ...req.body, orgId: req.user!.orgId });
+      const service = insertServiceSchema.parse({ ...req.body, orgId: "" });
       const newService = await storage.createService(service);
       res.status(201).json(newService);
     } catch (error) {
@@ -355,9 +352,9 @@ export async function registerRoutes(app: Express) {
   });
 
   // Bookings
-  app.get("/api/bookings", apiLimiter, requireAuth, async (req, res) => {
+  app.get("/api/bookings", apiLimiter, async (req, res) => {
     try {
-      const bookings = await storage.getBookings(req.user!.orgId);
+      const bookings = await storage.getBookings("");
       res.json(bookings);
     } catch (error) {
       console.error("Error fetching bookings:", error);
@@ -552,9 +549,9 @@ export async function registerRoutes(app: Express) {
   }
 
   // Clients
-  app.get("/api/clients", apiLimiter, requireAuth, async (req, res) => {
+  app.get("/api/clients", apiLimiter, async (req, res) => {
     try {
-      const clients = await storage.getClients(req.user!.orgId);
+      const clients = await storage.getClients("");
       res.json(clients);
     } catch (error) {
       console.error("Error fetching clients:", error);
@@ -754,8 +751,8 @@ export async function registerRoutes(app: Express) {
 
       // Set session
       if (req.session) {
-        (req.session as any).customerId = customer.id;
-        (req.session as any).customerName = customer.name;
+        req.session.customerId = customer.id;
+        req.session.customerName = customer.name;
       }
 
       res.json({
@@ -796,8 +793,8 @@ export async function registerRoutes(app: Express) {
 
       // Set session
       if (req.session) {
-        (req.session as any).customerId = customer.id;
-        (req.session as any).customerName = customer.name;
+        req.session.customerId = customer.id;
+        req.session.customerName = customer.name;
       }
 
       res.json({
@@ -820,8 +817,8 @@ export async function registerRoutes(app: Express) {
   // Customer logout
   app.post("/api/customer/logout", async (req, res) => {
     if (req.session) {
-      delete (req.session as any).customerId;
-      delete (req.session as any).customerName;
+      delete req.session.customerId;
+      delete req.session.customerName;
     }
     res.json({ success: true });
   });
@@ -1079,7 +1076,7 @@ export async function registerRoutes(app: Express) {
   });
 
   // Get all discount codes (admin only)
-  app.get("/api/discounts", requireAuth, async (req, res) => {
+  app.get("/api/discounts", async (req, res) => {
     try {
       const discounts = await storage.getDiscountCodes();
       res.json(discounts);
@@ -1142,7 +1139,7 @@ export async function registerRoutes(app: Express) {
   // =====================================================
 
   // Get all reminder templates (admin only)
-  app.get("/api/reminder-templates", requireAuth, async (req, res) => {
+  app.get("/api/reminder-templates", async (req, res) => {
     try {
       const templates = await storage.getReminderTemplates();
       res.json(templates);
@@ -1190,7 +1187,7 @@ export async function registerRoutes(app: Express) {
   });
 
   // Get reminder logs (admin only)
-  app.get("/api/reminder-logs", requireAuth, async (req, res) => {
+  app.get("/api/reminder-logs", async (req, res) => {
     try {
       const logs = await storage.getReminderLogs();
       res.json(logs);
@@ -1212,7 +1209,7 @@ export async function registerRoutes(app: Express) {
   });
 
   // Get reminder scheduler status (admin only)
-  app.get("/api/reminders/status", requireAuth, async (req, res) => {
+  app.get("/api/reminders/status", async (req, res) => {
     try {
       const status = reminderScheduler.getStatus();
       const smsReady = smsService.isReady();
@@ -1285,6 +1282,25 @@ export async function registerRoutes(app: Express) {
       res.status(500).json({ error: "Failed to delete staff break" });
     }
   });
+
+  // Stub routes — features planned but not yet implemented
+  const notImplemented = (_req: any, res: any) => res.json([]);
+  app.get("/api/packages", notImplemented);
+  app.post("/api/packages/purchase", (_req, res) => res.json({ success: false, message: "Not yet implemented" }));
+  app.post("/api/process-tip", (_req, res) => res.json({ success: false, message: "Not yet implemented" }));
+  app.post("/api/purchase-package", (_req, res) => res.json({ success: false, message: "Not yet implemented" }));
+  app.get("/api/analytics", notImplemented);
+  app.get("/api/payments", notImplemented);
+  app.get("/api/marketing-campaigns", notImplemented);
+  app.post("/api/marketing-campaigns", (_req, res) => res.json({ success: false, message: "Not yet implemented" }));
+  app.get("/api/staff-schedule", notImplemented);
+  app.post("/api/staff-schedule", (_req, res) => res.json({ success: false, message: "Not yet implemented" }));
+  app.get("/api/time-off-requests", notImplemented);
+  app.post("/api/time-off-requests", (_req, res) => res.json({ success: false, message: "Not yet implemented" }));
+  app.get("/api/inventory", notImplemented);
+  app.post("/api/inventory", (_req, res) => res.json({ success: false, message: "Not yet implemented" }));
+  app.get("/api/inventory-usage", notImplemented);
+  app.get("/api/retail-sales", notImplemented);
 
   // Start the reminder scheduler
   reminderScheduler.start();

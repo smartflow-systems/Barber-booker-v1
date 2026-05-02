@@ -1,8 +1,10 @@
 import 'express-session';
-import { AdminUser } from '../shared/schema';
 
 declare module 'express-session' {
   interface SessionData {
-    adminUser?: AdminUser;
+    adminUserId?: number;
+    customerId?: number;
+    customerName?: string;
+    userId?: number;
   }
 }

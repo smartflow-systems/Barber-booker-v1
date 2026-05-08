@@ -194,3 +194,4 @@ pgdata/
 .s.PGSQL.*
 .s.PGSQL.*.lock
 # Local Postgres files
+# Local runtime files

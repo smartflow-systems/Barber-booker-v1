@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { notify } from "../sfs-comms-client";
 
 // Check if OpenAI API key is available
 const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
@@ -36,8 +37,21 @@ export async function generateBookingMessage(customerName: string, date: string,
 }
 
 export async function sendEmailConfirmation(email: string, message: string): Promise<boolean> {
-  // Try multiple email service options
-  
+  // Option 0: sfs-comms-hub (preferred when configured)
+  if (process.env.SFS_COMMS_URL) {
+    try {
+      await notify.email({
+        to: email,
+        subject: "Booking Confirmation - BarberFlow Systems",
+        html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto"><h2 style="color:#374151">Booking Confirmation</h2><p style="color:#6b7280;line-height:1.6">${message}</p><hr style="border:1px solid #e5e7eb;margin:20px 0"><p style="color:#9ca3af;font-size:12px">SmartFlow Systems — Professional Barbershop Services</p></div>`,
+      });
+      console.log(`✓ Email sent via sfs-comms-hub to ${email}`);
+      return true;
+    } catch (err) {
+      console.error("sfs-comms-hub email failed, falling back:", (err as Error).message);
+    }
+  }
+
   // Option 1: SendGrid (if available)
   if (process.env.SENDGRID_API_KEY) {
     try {

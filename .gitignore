@@ -193,3 +193,4 @@ pgdata/
 # Local Postgres socket/lock files
 .s.PGSQL.*
 .s.PGSQL.*.lock
+# Local Postgres files

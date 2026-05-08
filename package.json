@@ -76,7 +76,7 @@
     "tailwind-merge": "^3.5.0",
     "wouter": "^3.9.0",
     "ws": "^8.20.0",
-    "zod": "^4.4.2"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@replit/vite-plugin-runtime-error-modal": "^0.0.6",

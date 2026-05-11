@@ -68,7 +68,7 @@
     "lusca": "^1.7.0",
     "nodemailer": "^8.0.7",
     "openai": "^6.35.0",
-    "react": "^19.2.5",
+    "react": "^19.2.6",
     "react-dom": "^19.2.5",
     "react-hook-form": "^7.75.0",
     "recharts": "^3.8.1",

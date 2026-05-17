@@ -195,3 +195,4 @@ pgdata/
 .s.PGSQL.*.lock
 # Local Postgres files
 # Local runtime files
+.env.bak.*
